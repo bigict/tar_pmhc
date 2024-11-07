@@ -372,31 +372,32 @@ def csv_to_fasta_main(args):  # pylint: disable=redefined-outer-name
     else:
       mapping_idx[pid] = fasta_idx[c]
 
-  print(f"process {args.csv_file} ...")
-  with open(args.csv_file, "r") as f:
-    reader = csv.DictReader(f)
+  for csv_file in args.csv_file:
+    print(f"process {csv_file} ...")
+    with open(csv_file, "r") as f:
+      reader = csv.DictReader(f)
 
-    for i, row in enumerate(reader, start=args.start_idx):
-      pdb_id = f"{args.pid_prefix}{i}"
+      for i, row in enumerate(reader, start=args.start_idx):
+        pdb_id = f"{args.pid_prefix}{i}"
 
-      for key, chain in (("Antigen", "P"), ("MHC_str", "M"), ("a_seq", "A"),
-                         ("b_seq", "B"), ("tcrb", "B"), ("TCRA", "A"),
-                         ("TCRB", "B")):
-        if key in row:
-          if cell_check(row[key]):
-            cell_write(row[key], f"{pdb_id}_{chain}")
+        for key, chain in (("Antigen", "P"), ("MHC_str", "M"), ("a_seq", "A"),
+                           ("b_seq", "B"), ("tcrb", "B"), ("TCRA", "A"),
+                           ("TCRB", "B")):
+          if key in row:
+            if cell_check(row[key]):
+              cell_write(row[key], f"{pdb_id}_{chain}")
 
-      if "y" in row:
-        attr_idx[pdb_id] = {"label": float(row["y"])}
-      elif "label" in row:
-        attr_idx[pdb_id] = {"label": float(row["label"])}
-      elif args.default_y is not None:
-        attr_idx[pdb_id] = {"label": args.default_y}
-      if "HLA" in row:
-        if pdb_id in attr_idx:
-          attr_idx[pdb_id]["MHC"] = row["HLA"]
-        else:
-          attr_idx[pdb_id] = {"MHC": row["HLA"]}
+        if "y" in row:
+          attr_idx[pdb_id] = {"label": float(row["y"])}
+        elif "label" in row:
+          attr_idx[pdb_id] = {"label": float(row["label"])}
+        elif args.default_y is not None:
+          attr_idx[pdb_id] = {"label": args.default_y}
+        if "HLA" in row:
+          if pdb_id in attr_idx:
+            attr_idx[pdb_id]["MHC"] = row["HLA"]
+          else:
+            attr_idx[pdb_id] = {"MHC": row["HLA"]}
 
   print(f"write {output_uri.mapping_idx} ...")
   with open(os.path.join(output_uri.path, output_uri.mapping_idx), "w") as f:
@@ -428,7 +429,7 @@ def csv_to_fasta_add_argument(parser):  # pylint: disable=redefined-outer-name
                       type=float,
                       default=None,
                       help="default label.")
-  parser.add_argument("csv_file", type=str, default=None, help="csv file")
+  parser.add_argument("csv_file", type=str, nargs="+", default=None, help="csv file")
   return parser
 
 

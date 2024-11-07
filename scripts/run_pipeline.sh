@@ -32,9 +32,9 @@ echo ${PATH}
 USER_HOME=${HOME}
 CONDA_HOME=${HOME}/.local/anaconda3
 
-. ${CONDA_HOME}/bin/activate ${CONDA_ENV} || exit 1
+# . ${CONDA_HOME}/bin/activate ${CONDA_ENV} || exit 1
 
-export PATH=${PATH}:${USER_HOME}/bin:${CONDA_HOME}/bin
+export PATH=${PATH}:${USER_HOME}/bin:${CONDA_HOME}/bin:
 
 for f in $(cat); do
   echo "msa_build: ${f}"
