@@ -100,7 +100,9 @@ for ((i=0;i<5;++i)); do
             }
           }
         }
-      }' > ${output_dir}/train_attr.idx_tcr_pmhc_${i}_all
+      }' > ${output_dir}/train_attr.idx_tcr_pmhc_db_fold${i}
+
+  cat ${CWD}/data/tcr_pmhc_db/attr.idx >> ${output_dir}/train_attr.idx_tcr_pmhc_db_fold${i}
 
   # make attr.idx for test fold_i
   cat ${output_dir}/attr.idx_all | \
@@ -119,25 +121,27 @@ for ((i=0;i<5;++i)); do
         }
       }' > ${output_dir}/test_attr.idx_tcr_pmhc_db_fold${i}
 
-  # augment tcr_pmhc data with pmhc and calculate weights
+  cat ${CWD}/data/tcr_pmhc_db/attr.idx ${output_dir}/attr.idx_all > ${output_dir}/attr.idx
+
+  # calculate weights
   python ${CWD}/main.py tcr_pmhc_to_pmhc \
-      --target_uri "${output_dir}?mapping_idx=mapping.idx_all&chain_idx=chain.idx_tcr_pmhc_${i}&attr_idx=train_attr.idx_tcr_pmhc_${i}_all" \
+      --target_uri "${output_dir}?mapping_idx=mapping.idx_all&chain_idx=chain.idx_tcr_pmhc_${i}&attr_idx=train_attr.idx_tcr_pmhc_db_fold${i}" \
       --output "${output_dir}?mapping_idx=mapping.idx_tcr_pmhc_${i}&attr_idx=train_attr.idx_tcr_pmhc_db_fold${i}" \
       --pid_topk=1000
 
-  cat ${output_dir}/mapping.idx_tcr_pmhc_${i} | \
-    awk -v mapping_idx=${output_dir}/mapping.idx_all 'BEGIN{
-        while(getline<mapping_idx)
-          a[$0] = 1;
-      }{
-        if (!($0 in a)) {
-          print $0;
-        }
-      }' > ${output_dir}/mapping.idx_tcr_pmhc_delta_${i}
+  #cat ${output_dir}/mapping.idx_tcr_pmhc_${i} | \
+  #  awk -v mapping_idx=${output_dir}/mapping.idx_all 'BEGIN{
+  #      while(getline<mapping_idx)
+  #        a[$0] = 1;
+  #    }{
+  #      if (!($0 in a)) {
+  #        print $0;
+  #      }
+  #    }' > ${output_dir}/mapping.idx_tcr_pmhc_delta_${i}
 done
 
 # build the dataset (test data included) mapping.idx and chain.idx
-cat ${CWD}/data/tcr_pmhc_db/mapping.idx ${output_dir}/mapping.idx_all ${output_dir}/mapping.idx_tcr_pmhc_delta_[0-5] > ${output_dir}/mapping.idx
+cat ${CWD}/data/tcr_pmhc_db/mapping.idx ${output_dir}/mapping.idx_all > ${output_dir}/mapping.idx
 cat ${output_dir}/mapping.idx | \
   cut -f2 | \
   awk -F _ '{printf("%s",$1);for (i=2;i<NF;++i) printf("_%s", $i); printf(" %s\n", $NF);}' | \
