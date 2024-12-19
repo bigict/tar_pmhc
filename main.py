@@ -13,7 +13,7 @@ import time
 from urllib.parse import urlparse, parse_qs
 
 from profold2.data.parsers import parse_fasta
-from profold2.data.utils import decompose_pid, seq_index_join, seq_index_split
+from profold2.data.utils import compose_pid, decompose_pid, seq_index_join, seq_index_split
 from profold2.utils import timing
 
 
@@ -372,31 +372,49 @@ def csv_to_fasta_main(args):  # pylint: disable=redefined-outer-name
     else:
       mapping_idx[pid] = fasta_idx[c]
 
-  print(f"process {args.csv_file} ...")
-  with open(args.csv_file, "r") as f:
-    reader = csv.DictReader(f)
+  task_mapping = {"A": [1], "B": [1], "M": [0]}
+  for csv_file in args.csv_file:
+    print(f"process {csv_file} ...")
+    with open(csv_file, "r") as f:
+      reader = csv.DictReader(f)
 
-    for i, row in enumerate(reader, start=args.start_idx):
-      pdb_id = f"{args.pid_prefix}{i}"
+      for i, row in enumerate(reader, start=args.start_idx):
+        pdb_id = f"{args.pid_prefix}{i}"
 
-      for key, chain in (("Antigen", "P"), ("MHC_str", "M"), ("a_seq", "A"),
-                         ("b_seq", "B"), ("tcrb", "B"), ("TCRA", "A"),
-                         ("TCRB", "B")):
-        if key in row:
-          if cell_check(row[key]):
-            cell_write(row[key], f"{pdb_id}_{chain}")
+        label_mask = [False]*2
+        label = None
+        if "y" in row:
+          label = float(row["y"])
+        elif "label" in row:
+          label = float(row["label"])
+        elif args.default_y is not None:
+          label = args.default_y
 
-      if "y" in row:
-        attr_idx[pdb_id] = {"label": float(row["y"])}
-      elif "label" in row:
-        attr_idx[pdb_id] = {"label": float(row["label"])}
-      elif args.default_y is not None:
-        attr_idx[pdb_id] = {"label": args.default_y}
-      if "HLA" in row:
-        if pdb_id in attr_idx:
-          attr_idx[pdb_id]["MHC"] = row["HLA"]
+        for key, chain in (("Antigen", "P"), ("Peptide", "P"), ("MHC_str", "M"), ("a_seq", "A"),
+                           ("b_seq", "B"), ("tcrb", "B"), ("TCRA", "A"),
+                           ("TCRB", "B")):
+          if key in row:
+            if cell_check(row[key]):
+              cell_write(row[key], f"{pdb_id}_{chain}")
+              for task_idx in task_mapping.get(chain, []):
+                label_mask[task_idx] = True
+
+        assert label is not None
+        if label > 0:
+          label = list(map(lambda x: float(x)*label, label_mask))
+        elif label_mask[1]:
+          label = [float(label_mask[0]) * 1.0, label]
         else:
-          attr_idx[pdb_id] = {"MHC": row["HLA"]}
+          assert not label_mask[1]
+          label = [label, 0.0]
+        attr_idx[pdb_id] = {"label": label, "label_mask": label_mask}
+        for key in ("HLA", "Allele"):
+          if key in row:
+            if pdb_id in attr_idx:
+              attr_idx[pdb_id]["MHC"] = row[key]
+            else:
+              attr_idx[pdb_id] = {"MHC": row[key]}
+            break
 
   print(f"write {output_uri.mapping_idx} ...")
   with open(os.path.join(output_uri.path, output_uri.mapping_idx), "w") as f:
@@ -428,7 +446,7 @@ def csv_to_fasta_add_argument(parser):  # pylint: disable=redefined-outer-name
                       type=float,
                       default=None,
                       help="default label.")
-  parser.add_argument("csv_file", type=str, default=None, help="csv file")
+  parser.add_argument("csv_file", type=str, nargs="+", default=None, help="csv file")
   return parser
 
 
@@ -662,9 +680,14 @@ def tcr_pmhc_to_pmhc_main(args):  # pylint: disable=redefined-outer-name
 
   new_mapping_dict = defaultdict(list)
   for pid, chain_list in chain_idx.items():
-    if pid in attr_idx and attr_idx[pid]["label"] > 0:
-      if "P" in chain_list and "M" in chain_list:
-        new_mapping_dict[(mapping_idx[f"{pid}_P"], mapping_idx[f"{pid}_M"])].append(pid)
+    if pid in attr_idx:
+      # label & label_mask | ~label_mask
+      # label_test = map(lambda x: (x[0] > 0) and x[1] or not x[1],
+      #                  zip(attr_idx[pid]["label"], attr_idx[pid]["label_mask"]))
+      label_mask = filter(lambda x: x[1], enumerate(attr_idx[pid]["label_mask"]))
+      if all([attr_idx[pid]["label"][i] for i, _ in label_mask]):
+        if "P" in chain_list and "M" in chain_list:
+          new_mapping_dict[(mapping_idx[f"{pid}_P"], mapping_idx[f"{pid}_M"])].append(pid)
 
   for (pid_p, pid_m), new_pid_list in new_mapping_dict.items():
     print(f"new_pid_list_count: {pid_p} {pid_m} {len(new_pid_list)}")
@@ -677,13 +700,13 @@ def tcr_pmhc_to_pmhc_main(args):  # pylint: disable=redefined-outer-name
       weight = m / len(new_pid_list)
       attr_idx[new_pid].update(weight=weight)
 
-      if len(chain_idx[new_pid]) >= 3:
-        new_pid = f"{args.pid_prefix}{new_pid}"
+      # if len(chain_idx[new_pid]) >= 3:
+      #   new_pid = f"{args.pid_prefix}{new_pid}"
 
-        mapping_idx[f"{new_pid}_P"] = pid_p
-        mapping_idx[f"{new_pid}_M"] = pid_m
+      #   mapping_idx[f"{new_pid}_P"] = pid_p
+      #   mapping_idx[f"{new_pid}_M"] = pid_m
 
-        attr_idx[new_pid] = {"label":1.0, "weight":weight}
+      #   attr_idx[new_pid] = {"label":1.0, "weight":weight}
 
   print(f"write {output_uri.mapping_idx} ...")
   with open(os.path.join(output_uri.path, output_uri.mapping_idx), "w") as f:
